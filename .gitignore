@@ -1,0 +1,101 @@
+# Environment and local configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+api/.env
+api/.env.*
+!api/.env.example
+!api/.env.*.example
+*.local
+
+# PHP dependencies and tooling
+/vendor/
+composer.phar
+.phpunit.result.cache
+.php-cs-fixer.cache
+.phpactor.json
+phpunit.xml
+!phpunit.xml.dist
+
+# Runtime uploads and generated storage
+/api/uploads/
+/uploads/
+/storage/
+/cache/
+/sessions/
+
+# Logs and runtime state
+/logs/
+*.log
+*.pid
+*.pid.lock
+
+# Test and coverage output
+/coverage/
+/.phpunit.cache/
+/test-results/
+/playwright-report/
+/blob-report/
+
+# Frontend dependencies and generated output
+/node_modules/
+/.npm/
+/.pnpm-store/
+/.yarn/cache/
+/.yarn/unplugged/
+/dist/
+/build/
+/.cache/
+
+# Local database exports and backups
+*.sql.gz
+*.sql.zip
+*.dump
+*.backup
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Credentials, keys, and certificates
+.aws/
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+credentials.json
+service-account*.json
+
+# IDE and editor files
+.idea/
+.vscode/
+*.code-workspace
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# Operating-system files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+Desktop.ini
+
+# Temporary files and archives
+/tmp/
+/temp/
+*.tmp
+*.temp
+*.bak
+*.orig
+*.zip
+*.tar
+*.tar.gz

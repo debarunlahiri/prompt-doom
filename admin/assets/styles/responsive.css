@@ -1,0 +1,103 @@
+@media (max-width: 1050px) {
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .admin-shell {
+    display: block;
+  }
+  aside {
+    position: fixed;
+    width: 260px;
+    transform: translateX(-105%);
+    transition: 0.2s;
+  }
+  aside.open {
+    transform: none;
+  }
+  #menu {
+    display: grid;
+  }
+  .content {
+    padding: 18px 14px;
+  }
+  .stats,
+  .cards {
+    grid-template-columns: 1fr;
+  }
+  .hero {
+    align-items: flex-start;
+  }
+  .hero h2 {
+    font-size: 30px;
+  }
+  .panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .analytics-period {
+    width: 100%;
+    flex-basis: auto;
+  }
+  .toolbar {
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+  .toolbar label {
+    width: 100%;
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .span-2 {
+    grid-column: auto;
+  }
+  .login-page {
+    grid-template-columns: 1fr;
+  }
+  .login-visual {
+    display: none;
+  }
+  .login-panel {
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .login-card {
+    padding: 28px 24px;
+  }
+  .event-row {
+    grid-template-columns: 110px 1fr 45px;
+  }
+  .profile-grid {
+    grid-template-columns: 1fr;
+  }
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+  .cropper-stage {
+    height: 42vh;
+    min-height: 280px;
+  }
+  .cropper-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .cropper-toolbar label {
+    width: 100%;
+  }
+  .cropper-tool-group {
+    flex-wrap: wrap;
+  }
+  .upload-actions {
+    right: 8px;
+    bottom: 8px;
+  }
+  .upload-actions button,
+  .upload-actions label {
+    padding: 7px 8px;
+  }
+}

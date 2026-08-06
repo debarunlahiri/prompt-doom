@@ -1,0 +1,7 @@
+/* Compatibility entry point. New pages load the modular stylesheets directly. */
+@import url("styles/base.css");
+@import url("styles/auth.css");
+@import url("styles/layout.css");
+@import url("styles/pages.css");
+@import url("styles/overlays.css");
+@import url("styles/responsive.css");
