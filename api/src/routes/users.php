@@ -69,6 +69,11 @@ if (in_array($route, ["favorites", "history"], true) && $method === "GET") {
         $st->execute([$auth["id"]]);
         $items = [];
         foreach ($st->fetchAll() as $row) {
+            $row["imageUrl"] = asset_url($row["imageUrl"], $config);
+            $row["thumbnailUrl"] = asset_url(
+                $row["thumbnailUrl"],
+                $config,
+            );
             $image = $row;
             unset($image["createdAt"], $image["categoryName"]);
             $image["category"] = ["name" => $row["categoryName"]];
@@ -97,7 +102,10 @@ if (in_array($route, ["favorites", "history"], true) && $method === "GET") {
                 "id" => $row["id"],
                 "title" => $row["title"],
                 "slug" => $row["slug"],
-                "thumbnailUrl" => $row["thumbnailUrl"],
+                "thumbnailUrl" => asset_url(
+                    $row["thumbnailUrl"],
+                    $config,
+                ),
             ];
             unset(
                 $row["id"],

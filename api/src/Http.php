@@ -92,6 +92,26 @@ function pagination(int $page, int $limit, int $total): array
     ];
 }
 
+function asset_url(?string $storedUrl, array $config): ?string
+{
+    if ($storedUrl === null || $storedUrl === "") {
+        return $storedUrl;
+    }
+
+    $path = parse_url($storedUrl, PHP_URL_PATH);
+    if (!is_string($path)) {
+        return $storedUrl;
+    }
+
+    $uploadPosition = strpos($path, "/uploads/");
+    if ($uploadPosition === false) {
+        return $storedUrl;
+    }
+
+    return rtrim((string) $config["app_url"], "/") .
+        substr($path, $uploadPosition);
+}
+
 function slugify(string $value): string
 {
     $slug = strtolower(trim($value));

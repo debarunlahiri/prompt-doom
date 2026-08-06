@@ -39,7 +39,7 @@ function env(string $key, mixed $default = null): mixed
 return [
     "app_env" => env("APP_ENV", "local"),
     "app_url" => rtrim(
-        (string) env("APP_URL", "http://localhost/prompt-doom/api"),
+        (string) env("APP_URL", "http://localhost:8080/prompt-doom/api"),
         "/",
     ),
     "db" => [

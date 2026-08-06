@@ -19,7 +19,8 @@ phpunit.xml
 !phpunit.xml.dist
 
 # Runtime uploads and generated storage
-/api/uploads/
+/api/uploads/*
+!/api/uploads/.htaccess
 /uploads/
 /storage/
 /cache/

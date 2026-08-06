@@ -101,3 +101,15 @@
     padding: 7px 8px;
   }
 }
+
+@media (max-width: 520px) {
+  .taxonomy-form {
+    grid-template-columns: 1fr;
+  }
+  .taxonomy-name,
+  .taxonomy-status,
+  .taxonomy-description,
+  .taxonomy-form .form-actions {
+    grid-column: 1;
+  }
+}

@@ -103,6 +103,8 @@ if ($method === "GET" && $route === "images") {
         "SELECT t.id,t.name,t.slug,t.status FROM image_tags it JOIN tags t ON t.id=it.tag_id WHERE it.image_id=?",
     );
     foreach ($items as &$item) {
+        $item["imageUrl"] = asset_url($item["imageUrl"], $config);
+        $item["thumbnailUrl"] = asset_url($item["thumbnailUrl"], $config);
         $item["category"] = $item["category_id"]
             ? [
                 "id" => (int) $item["category_id"],
@@ -149,11 +151,48 @@ if ($method === "POST" && $route === "images") {
     ];
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $saved = [];
+    $maxUploadBytes = max(1, (int) $config["max_upload_mb"]) * 1024 * 1024;
     foreach (
         ["image" => "images", "thumbnail" => "thumbnails"]
         as $field => $folder
     ) {
-        $mime = $finfo->file($_FILES[$field]["tmp_name"]);
+        $upload = $_FILES[$field];
+        if (($upload["error"] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            throw new ApiException(
+                422,
+                "The {$field} upload did not complete successfully",
+                "UPLOAD_INCOMPLETE",
+                ["field" => $field, "uploadError" => $upload["error"] ?? null],
+            );
+        }
+        if (
+            empty($upload["tmp_name"]) ||
+            !is_uploaded_file($upload["tmp_name"])
+        ) {
+            throw new ApiException(
+                422,
+                "The {$field} upload is invalid",
+                "INVALID_UPLOAD",
+                ["field" => $field],
+            );
+        }
+        if ((int) ($upload["size"] ?? 0) < 1) {
+            throw new ApiException(
+                422,
+                "The {$field} file is empty",
+                "EMPTY_UPLOAD",
+                ["field" => $field],
+            );
+        }
+        if ((int) $upload["size"] > $maxUploadBytes) {
+            throw new ApiException(
+                413,
+                "The {$field} exceeds the upload size limit",
+                "UPLOAD_TOO_LARGE",
+                ["field" => $field, "maxUploadMb" => $config["max_upload_mb"]],
+            );
+        }
+        $mime = $finfo->file($upload["tmp_name"]);
         if (!isset($allowed[$mime])) {
             throw new ApiException(
                 422,
@@ -162,16 +201,37 @@ if ($method === "POST" && $route === "images") {
             );
         }
         $directory = __DIR__ . "/../../uploads/" . $folder;
-        if (!is_dir($directory)) {
-            mkdir($directory, 0775, true);
+        if (
+            (!is_dir($directory) && !mkdir($directory, 0775, true)) ||
+            !is_writable($directory)
+        ) {
+            foreach ($saved as $savedFile) {
+                $savedPath = __DIR__ . "/../../" . $savedFile["key"];
+                if (is_file($savedPath)) {
+                    unlink($savedPath);
+                }
+            }
+            throw new ApiException(
+                500,
+                "The upload directory is not writable",
+                "UPLOAD_STORAGE_NOT_WRITABLE",
+                ["field" => $field],
+            );
         }
         $name = bin2hex(random_bytes(16)) . "." . $allowed[$mime];
+        $destination = "{$directory}/{$name}";
         if (
             !move_uploaded_file(
-                $_FILES[$field]["tmp_name"],
-                "{$directory}/{$name}",
+                $upload["tmp_name"],
+                $destination,
             )
         ) {
+            foreach ($saved as $savedFile) {
+                $savedPath = __DIR__ . "/../../" . $savedFile["key"];
+                if (is_file($savedPath)) {
+                    unlink($savedPath);
+                }
+            }
             throw new ApiException(
                 500,
                 "Unable to store uploaded image",
@@ -196,7 +256,7 @@ if ($method === "POST" && $route === "images") {
         $saved["image"]["key"],
         $saved["thumbnail"]["url"],
         $saved["thumbnail"]["key"],
-        $body["aiModel"] ?: null,
+        ($body["aiModel"] ?? null) ?: null,
         $body["status"],
         $body["status"],
         $auth["id"],

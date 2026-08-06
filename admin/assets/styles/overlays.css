@@ -105,7 +105,7 @@
   width: min(540px, calc(100vw - 32px));
 }
 .modal-small {
-  width: min(440px, calc(100vw - 32px));
+  width: min(500px, calc(100vw - 32px));
 }
 .modal-head {
   display: flex;
@@ -132,9 +132,9 @@
   font-weight: 750;
 }
 .taxonomy-form {
-  display: flex;
-  flex-direction: column;
-  gap: 17px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 16px;
 }
 .taxonomy-form label {
   gap: 8px;
@@ -142,21 +142,21 @@
   color: #34353a;
   font-size: 12px;
 }
-.taxonomy-form input,
-.taxonomy-form select {
-  height: 42px;
-  padding-top: 0;
-  padding-bottom: 0;
-  font-size: 13px;
+.taxonomy-name {
+  grid-column: 1;
 }
-.taxonomy-form textarea {
-  min-height: 120px;
-  max-height: 220px;
-  padding: 12px;
-  font-size: 13px;
-  line-height: 1.5;
+.taxonomy-status {
+  grid-column: 2;
+}
+.taxonomy-description {
+  grid-column: 1 / -1;
+}
+.taxonomy-description .textarea-control {
+  min-height: 105px;
+  max-height: 180px;
 }
 .taxonomy-form .form-actions {
+  grid-column: 1 / -1;
   margin-top: 3px;
   padding-top: 17px;
   border-top: 1px solid var(--line);

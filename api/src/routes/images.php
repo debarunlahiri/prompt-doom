@@ -42,6 +42,8 @@ if ($method === "GET" && $route === "") {
     $st->execute($params);
     $items = $st->fetchAll();
     foreach ($items as &$item) {
+        $item["imageUrl"] = asset_url($item["imageUrl"], $config);
+        $item["thumbnailUrl"] = asset_url($item["thumbnailUrl"], $config);
         $item["category"] = $item["categoryId"]
             ? [
                 "id" => (int) $item["categoryId"],
@@ -78,6 +80,8 @@ if (
         );
         $st->execute([$id]);
         $image = $st->fetch();
+        $image["imageUrl"] = asset_url($image["imageUrl"], $config);
+        $image["thumbnailUrl"] = asset_url($image["thumbnailUrl"], $config);
         $image["category"] = $image["categoryId"]
             ? [
                 "id" => (int) $image["categoryId"],
