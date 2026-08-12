@@ -118,6 +118,20 @@ Authentication: not required.
 
 Returns the account and token pair. Five failed attempts temporarily lock the account for 15 minutes.
 
+### Continue with Google
+
+`POST /auth/google`
+
+Authentication: not required. Send the Google ID token returned by the native Google sign-in flow:
+
+```json
+{
+  "idToken": "<google-id-token>"
+}
+```
+
+The API verifies the token's signature and claims with Google, links or creates the corresponding user, and returns the normal Prompt Doom access/refresh token pair. Only verified Google email addresses are accepted.
+
 ### Refresh tokens
 
 `POST /auth/refresh`
@@ -189,14 +203,14 @@ Authentication: optional. Invalid optional tokens are treated as anonymous.
 
 Query parameters:
 
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `page` | integer | Page number, starting at 1 |
-| `limit` | integer | Items per page, maximum 100 |
-| `q` | string | Searches image title and AI-model data |
-| `model` | string | Exact AI-model filter |
-| `category` | string | Category slug |
-| `tag` | string | Tag slug |
+| Parameter  | Type    | Description                            |
+| ---------- | ------- | -------------------------------------- |
+| `page`     | integer | Page number, starting at 1             |
+| `limit`    | integer | Items per page, maximum 100            |
+| `q`        | string  | Searches image title and AI-model data |
+| `model`    | string  | Exact AI-model filter                  |
+| `category` | string  | Category slug                          |
+| `tag`      | string  | Tag slug                               |
 
 Example:
 
@@ -215,8 +229,8 @@ Response shape:
         "id": 1,
         "title": "Example",
         "slug": "example-123",
-        "imageUrl": "http://localhost:8080/prompt-doom/api/uploads/images/example.jpg",
-        "thumbnailUrl": "http://localhost:8080/prompt-doom/api/uploads/thumbnails/example.jpg",
+        "imageUrl": "http://localhost:8080/prompt-doom/uploads/images/example.jpg",
+        "thumbnailUrl": "http://localhost:8080/prompt-doom/uploads/thumbnails/example.jpg",
         "aiModel": null,
         "publishedAt": "2026-08-06 10:00:00",
         "viewCount": 0,
@@ -242,7 +256,7 @@ Response shape:
 
 Authentication: optional.
 
-Returns `data.image`, including category, tags, image URLs, view count, and copy count. Tags are currently returned as:
+Returns `data.image`, including category, tags, image URLs, view count, and copy count. Each successful request increments the image view count and records an `image_view` analytics event. Tags are currently returned as:
 
 ```json
 {
@@ -275,7 +289,7 @@ Authentication: optional.
 }
 ```
 
-This increments the image view count and records analytics. When a valid user token is supplied, it also updates that user's prompt history.
+This records a `prompt_view` analytics event. When a valid user token is supplied, it also updates that user's prompt history. The image view count is recorded by the image-detail endpoint, so opening a prompt does not count the same image view twice.
 
 ### Add favourite
 
@@ -297,9 +311,12 @@ Returns `204 No Content`.
 
 `POST /images/{imageId}/copy`
 
-Authentication: required user access token.
+Authentication: optional. Logged-in copies are linked to the user. Anonymous
+copies receive a privacy-safe guest identifier and platform classification.
 
-The optional JSON body is stored as analytics metadata. Returns `201 Created`.
+The optional JSON body is stored as analytics metadata. The mobile app sends
+`{"platform":"mobile","source":"prompt_screen"}`. Every successful call
+increments the image copy count and returns `201 Created`.
 
 ### Record prompt share
 
@@ -316,6 +333,20 @@ Example metadata:
 ```
 
 Returns `201 Created`.
+
+Image list and detail responses include the canonical text-share fields:
+
+```json
+{
+  "shareUrl": "https://promptdoom.com/share/4",
+  "shareMessage": "erge\nhttps://promptdoom.com/share/4"
+}
+```
+
+Mobile clients should send `shareMessage` to the system share sheet. The title
+and public share URL are separated by one newline, matching the native Android
+text share preview. Opening `/share/{imageId}` redirects into the installed app
+at `promptdoom://image/{imageId}`.
 
 ### Report content
 
@@ -469,7 +500,7 @@ curl 'http://localhost:8080/prompt-doom/api/v1/images?page=1&limit=20'
 - CORS currently allows all origins.
 - Access tokens default to 15 minutes; refresh tokens default to 30 days unless changed in `.env`.
 - Image URLs are absolute and use the configured `APP_URL`.
-- For physical devices, set `APP_URL` in `api/.env` to the development computer's LAN IP so returned image and thumbnail URLs are reachable from the device.
+- For physical devices, set `APP_URL` in the root `.env` file to the development computer's LAN IP so returned image and thumbnail URLs are reachable from the device.
 - Only published, non-deleted images are visible through user image endpoints.
 - Optional-auth endpoints continue anonymously when the token is missing or invalid.
 - The API does not currently provide standalone public category or tag listing endpoints.

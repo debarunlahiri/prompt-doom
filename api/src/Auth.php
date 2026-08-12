@@ -99,6 +99,41 @@ function current_auth(
     }
 }
 
+function verify_google_id_token(string $idToken, string $clientId): array
+{
+    if ($clientId === "") {
+        throw new ApiException(503, "Google sign-in is not configured", "GOOGLE_AUTH_NOT_CONFIGURED");
+    }
+
+    $curl = curl_init(
+        "https://oauth2.googleapis.com/tokeninfo?id_token=" . rawurlencode($idToken),
+    );
+    curl_setopt_array($curl, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_FOLLOWLOCATION => false,
+    ]);
+    $response = curl_exec($curl);
+    $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+    curl_close($curl);
+    $claims = is_string($response) ? json_decode($response, true) : null;
+
+    if (
+        $status !== 200 ||
+        !is_array($claims) ||
+        ($claims["aud"] ?? "") !== $clientId ||
+        !in_array($claims["iss"] ?? "", ["accounts.google.com", "https://accounts.google.com"], true) ||
+        (int) ($claims["exp"] ?? 0) <= time() ||
+        ($claims["email_verified"] ?? "false") !== "true" ||
+        empty($claims["sub"]) ||
+        !filter_var($claims["email"] ?? "", FILTER_VALIDATE_EMAIL)
+    ) {
+        throw new ApiException(401, "Google sign-in could not be verified", "INVALID_GOOGLE_TOKEN");
+    }
+
+    return $claims;
+}
+
 function issue_tokens(PDO $db, array $config, int $id, string $role): array
 {
     $jti = bin2hex(random_bytes(16));

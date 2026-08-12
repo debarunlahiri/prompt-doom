@@ -1,5 +1,11 @@
 import { api } from "../core/api.js";
-import { $, eventBars, hero, icon, refreshIcons } from "../components/ui.js";
+import {
+  $,
+  eventBars,
+  hero,
+  icon,
+  refreshIcons,
+} from "../components/ui.js?v=20260811-1";
 
 export const dashboardPage = {
   id: "dashboard",
@@ -23,6 +29,7 @@ export const dashboardPage = {
         "Require review",
       ],
       ["Favorites", data.summary.favorites, "sparkles", "Saved relationships"],
+      ["Total views", data.summary.totalViews, "eye", "Image detail opens"],
     ];
     $("#content").innerHTML =
       hero(

@@ -82,7 +82,7 @@ function escape(string $value): string
 <body>
   <main class="login-page">
     <section class="login-visual">
-      <div class="brand-icon"><i data-lucide="shield-check"></i></div>
+      <div class="brand-icon"><img src="assets/images/prompt_doom_logo.png?v=<?= filemtime(__DIR__ . '/assets/images/prompt_doom_logo.png') ?>" alt="Prompt Doom"></div>
       <div>
         <span class="eyebrow">INITIAL SETUP</span>
         <h1>Create the first administrator.</h1>

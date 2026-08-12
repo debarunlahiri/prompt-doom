@@ -2,8 +2,43 @@
 
 declare(strict_types=1);
 
+/**
+ * Request context provided by api/index.php.
+ *
+ * @var array<string, mixed> $config
+ * @var PDO $db
+ * @var string $method
+ * @var string $path
+ */
+
 $auth = current_auth($config, null, true);
 $route = trim(substr($path, strlen("/api/v1/images")), "/");
+
+function analytics_visitor(?array $auth, array $config): array
+{
+    $userId = $auth && ($auth["role"] ?? null) === "user"
+        ? (int) $auth["id"]
+        : null;
+    $userAgent = (string) ($_SERVER["HTTP_USER_AGENT"] ?? "");
+    $visitorSource = ($_SERVER["REMOTE_ADDR"] ?? "") . "|" . $userAgent;
+    $sessionId = $userId
+        ? null
+        : "guest-" .
+            substr(
+                hash_hmac(
+                    "sha256",
+                    $visitorSource,
+                    (string) $config["jwt_access_secret"],
+                ),
+                0,
+                16,
+            );
+    $platform = preg_match('/android|iphone|ipad|mobile/i', $userAgent)
+        ? "mobile"
+        : "web";
+
+    return [$userId, $sessionId, $platform];
+}
 
 if ($method === "GET" && $route === "") {
     [$page, $limit, $offset] = page_params();
@@ -42,8 +77,20 @@ if ($method === "GET" && $route === "") {
     $st->execute($params);
     $items = $st->fetchAll();
     foreach ($items as &$item) {
+        $item = array_merge(
+            $item,
+            image_share_payload(
+                (int) $item["id"],
+                (string) $item["title"],
+                $config,
+            ),
+        );
         $item["imageUrl"] = asset_url($item["imageUrl"], $config);
-        $item["thumbnailUrl"] = asset_url($item["thumbnailUrl"], $config);
+        $item["thumbnailUrl"] = thumbnail_asset_url(
+            $item["thumbnailUrl"],
+            $item["imageUrl"],
+            $config,
+        );
         $item["category"] = $item["categoryId"]
             ? [
                 "id" => (int) $item["categoryId"],
@@ -75,13 +122,32 @@ if (
         throw new ApiException(404, "Image not found", "IMAGE_NOT_FOUND");
     }
     if ($method === "GET" && $action === "") {
+        $db->prepare(
+            "UPDATE images SET view_count=view_count+1 WHERE id=?",
+        )->execute([$id]);
+        [$userId, $sessionId, $platform] = analytics_visitor($auth, $config);
+        $db->prepare(
+            "INSERT INTO analytics_events(event_id,user_id,image_id,event_type,session_id,platform) VALUES (UUID(),?,?,?,?,?)",
+        )->execute([$userId, $id, "image_view", $sessionId, $platform]);
         $st = $db->prepare(
             "SELECT i.id,i.title,i.slug,i.image_url AS imageUrl,i.thumbnail_url AS thumbnailUrl,i.ai_model AS aiModel,i.published_at AS publishedAt,i.view_count AS viewCount,i.copy_count AS copyCount,c.id AS categoryId,c.name AS categoryName FROM images i LEFT JOIN categories c ON c.id=i.category_id WHERE i.id=?",
         );
         $st->execute([$id]);
         $image = $st->fetch();
+        $image = array_merge(
+            $image,
+            image_share_payload(
+                (int) $image["id"],
+                (string) $image["title"],
+                $config,
+            ),
+        );
         $image["imageUrl"] = asset_url($image["imageUrl"], $config);
-        $image["thumbnailUrl"] = asset_url($image["thumbnailUrl"], $config);
+        $image["thumbnailUrl"] = thumbnail_asset_url(
+            $image["thumbnailUrl"],
+            $image["imageUrl"],
+            $config,
+        );
         $image["category"] = $image["categoryId"]
             ? [
                 "id" => (int) $image["categoryId"],
@@ -108,9 +174,6 @@ if (
         if (!$prompt) {
             throw new ApiException(404, "Prompt not found", "PROMPT_NOT_FOUND");
         }
-        $db->prepare(
-            "UPDATE images SET view_count=view_count+1 WHERE id=?",
-        )->execute([$id]);
         $userId = $auth && $auth["role"] === "user" ? $auth["id"] : null;
         $db->prepare(
             "INSERT INTO analytics_events(event_id,user_id,image_id,event_type) VALUES (UUID(),?,?,?)",
@@ -138,22 +201,30 @@ if (
         }
     }
     if ($method === "POST" && in_array($action, ["copy", "share"], true)) {
+        $eventMetadata = input();
+        [$userId, $sessionId, $platform] = analytics_visitor($auth, $config);
+        if (($eventMetadata["platform"] ?? null) === "mobile") {
+            $platform = "mobile";
+        }
         if ($action === "copy") {
-            $user = current_auth($config, "user");
             $db->prepare(
                 "UPDATE images SET copy_count=copy_count+1 WHERE id=?",
             )->execute([$id]);
-            $db->prepare(
-                "INSERT INTO prompt_view_history(user_id,image_id,copy_count,last_copied_at) VALUES (?,?,1,NOW()) ON DUPLICATE KEY UPDATE copy_count=copy_count+1,last_copied_at=NOW()",
-            )->execute([$user["id"], $id]);
+            if ($userId) {
+                $db->prepare(
+                    "INSERT INTO prompt_view_history(user_id,image_id,copy_count,last_copied_at) VALUES (?,?,1,NOW()) ON DUPLICATE KEY UPDATE copy_count=copy_count+1,last_copied_at=NOW()",
+                )->execute([$userId, $id]);
+            }
         }
         $db->prepare(
-            "INSERT INTO analytics_events(event_id,user_id,image_id,event_type,metadata) VALUES (UUID(),?,?,?,?)",
+            "INSERT INTO analytics_events(event_id,user_id,image_id,event_type,session_id,platform,metadata) VALUES (UUID(),?,?,?,?,?,?)",
         )->execute([
-            $auth["id"] ?? null,
+            $userId,
             $id,
             "prompt_" . $action,
-            json_encode(input()),
+            $sessionId,
+            $platform,
+            json_encode($eventMetadata),
         ]);
         success(null, 201);
     }

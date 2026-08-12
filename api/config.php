@@ -28,7 +28,7 @@ function load_environment(string $file): void
     }
 }
 
-load_environment(__DIR__ . "/.env");
+load_environment(dirname(__DIR__) . "/.env");
 
 function env(string $key, mixed $default = null): mixed
 {
@@ -60,4 +60,7 @@ return [
     "access_token_minutes" => (int) env("ACCESS_TOKEN_MINUTES", 15),
     "refresh_token_days" => (int) env("REFRESH_TOKEN_DAYS", 30),
     "max_upload_mb" => (int) env("MAX_UPLOAD_MB", 10),
+    "thumbnail_max_dimension" => (int) env("THUMBNAIL_MAX_DIMENSION", 720),
+    "thumbnail_jpeg_quality" => (int) env("THUMBNAIL_JPEG_QUALITY", 82),
+    "google_web_client_id" => env("GOOGLE_WEB_CLIENT_ID", ""),
 ];

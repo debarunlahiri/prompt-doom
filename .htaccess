@@ -1,2 +1,8 @@
 DirectoryIndex index.php
 
+RewriteEngine On
+RewriteRule ^share/([1-9][0-9]*)/?$ share.php?id=$1 [L,QSA]
+
+<FilesMatch "^\.env">
+  Require all denied
+</FilesMatch>

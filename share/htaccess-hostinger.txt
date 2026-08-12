@@ -1,0 +1,5 @@
+DirectoryIndex index.php
+
+RewriteEngine On
+RewriteRule ^([1-9][0-9]*)/?$ index.php?id=$1 [L,QSA]
+

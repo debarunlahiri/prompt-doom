@@ -2,6 +2,15 @@
 
 declare(strict_types=1);
 
+/**
+ * Request context provided by api/index.php.
+ *
+ * @var array<string, mixed> $config
+ * @var PDO $db
+ * @var string $method
+ * @var string $path
+ */
+
 $auth = current_auth($config, "user");
 $route = substr($path, strlen("/api/v1/users/"));
 $body = input();

@@ -83,6 +83,59 @@ export function closeModal() {
   $("#modal-root").innerHTML = "";
 }
 
+export function confirmDialog({
+  title,
+  message,
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  tone = "primary",
+  iconName = "circle-help",
+}) {
+  return new Promise((resolve) => {
+    const finish = (confirmed) => {
+      document.removeEventListener("keydown", handleKeydown);
+      closeModal();
+      resolve(confirmed);
+    };
+    const handleKeydown = (event) => {
+      if (event.key === "Escape") finish(false);
+    };
+    const cancelButton = cancelLabel
+      ? `<button type="button" class="button" data-dialog-cancel>${escapeHtml(cancelLabel)}</button>`
+      : "";
+
+    $("#modal-root").innerHTML =
+      `<div class="modal-backdrop dialog-backdrop" data-dialog-cancel><section class="modal custom-dialog" role="alertdialog" aria-modal="true" aria-labelledby="custom-dialog-title" aria-describedby="custom-dialog-message"><div class="custom-dialog-icon ${escapeHtml(tone)}">${icon(iconName)}</div><h2 id="custom-dialog-title">${escapeHtml(title)}</h2><p id="custom-dialog-message">${escapeHtml(message)}</p><div class="custom-dialog-actions${cancelLabel ? "" : " single"}">${cancelButton}<button type="button" class="${tone === "danger" ? "button danger" : "primary"}" data-dialog-confirm>${escapeHtml(confirmLabel)}</button></div></section></div>`;
+
+    $$('[data-dialog-cancel]').forEach((element) => {
+      element.onclick = (event) => {
+        if (event.currentTarget === event.target) finish(false);
+      };
+    });
+    $("[data-dialog-confirm]").onclick = () => finish(true);
+    document.addEventListener("keydown", handleKeydown);
+    refreshIcons();
+    $("[data-dialog-confirm]").focus();
+  });
+}
+
+export function alertDialog({
+  title = "Notice",
+  message,
+  buttonLabel = "Okay",
+  tone = "primary",
+  iconName = "info",
+}) {
+  return confirmDialog({
+    title,
+    message,
+    confirmLabel: buttonLabel,
+    cancelLabel: "",
+    tone,
+    iconName,
+  });
+}
+
 export function eventBars(events) {
   if (!events.length)
     return empty(

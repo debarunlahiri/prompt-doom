@@ -1,6 +1,6 @@
 <aside id="sidebar">
   <div class="brand">
-    <div class="brand-icon small"><i data-lucide="sparkles"></i></div>
+    <div class="brand-icon small"><img src="assets/images/prompt_doom_logo.png?v=<?= filemtime(__DIR__ . '/../../assets/images/prompt_doom_logo.png') ?>" alt="Prompt Doom"></div>
     <div><strong>Prompt Doom</strong><small>Admin console</small></div>
   </div>
   <nav id="navigation"></nav>
@@ -10,4 +10,3 @@
     <button id="logout" class="icon-button" title="Sign out"><i data-lucide="log-out"></i></button>
   </div>
 </aside>
-

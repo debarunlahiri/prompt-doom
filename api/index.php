@@ -5,6 +5,7 @@ declare(strict_types=1);
 require __DIR__ . "/src/Http.php";
 require __DIR__ . "/src/Database.php";
 require __DIR__ . "/src/Auth.php";
+require __DIR__ . "/src/ImageProcessor.php";
 
 $config = require __DIR__ . "/config.php";
 
@@ -14,12 +15,16 @@ header(
 );
 header("Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS");
 header("X-API-Version: v1");
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Pragma: no-cache");
+header("Expires: 0");
 if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
     http_response_code(204);
     exit();
 }
 
 try {
+    $databaseOperation = null;
     $method = $_SERVER["REQUEST_METHOD"];
     $requestPath = parse_url($_SERVER["REQUEST_URI"], PHP_URL_PATH) ?: "/";
     $basePath = rtrim(dirname($_SERVER["SCRIPT_NAME"]), "/");
@@ -98,22 +103,47 @@ try {
     }
     json_response($payload, $error->status);
 } catch (PDOException $error) {
+    error_log(
+        "Prompt Doom database error [{$error->getCode()}]: {$error->getMessage()}",
+    );
     $code = $error->getCode() === "23000" ? "CONFLICT" : "DATABASE_ERROR";
     $status = $error->getCode() === "23000" ? 409 : 500;
-    json_response(
-        [
-            "success" => false,
-            "error" => [
-                "code" => $code,
-                "message" =>
-                    $status === 409
-                        ? "The record conflicts with existing data"
-                        : "Database operation failed",
-            ],
+    $isAdminRequest = isset($path) && str_starts_with($path, "/api/v1/admin/");
+    $errorInfo = is_array($error->errorInfo ?? null)
+        ? $error->errorInfo
+        : [];
+    $sqlState = (string) ($errorInfo[0] ?? $error->getCode());
+    $driverCode = $errorInfo[1] ?? null;
+    $driverMessage = (string) ($errorInfo[2] ?? $error->getMessage());
+    $message =
+        $status === 409
+            ? "The database rejected the operation because it conflicts with existing data"
+            : "The database operation failed";
+    $payload = [
+        "success" => false,
+        "error" => [
+            "code" => $code,
+            "message" => $message,
         ],
+    ];
+    if ($isAdminRequest) {
+        $payload["error"]["details"] = [
+            "operation" => $databaseOperation ?: "Processing {$method} {$path}",
+            "sqlState" => $sqlState,
+            "driverCode" => $driverCode,
+            "driverMessage" => $driverMessage,
+            "explanation" =>
+                "The request reached the database, but MySQL rejected this specific operation. Use the operation and driverMessage fields to identify the affected table, column, constraint, or connection issue.",
+        ];
+    }
+    json_response(
+        $payload,
         $status,
     );
 } catch (Throwable $error) {
+    error_log(
+        "Prompt Doom internal error: {$error->getMessage()} in {$error->getFile()}:{$error->getLine()}",
+    );
     json_response(
         [
             "success" => false,

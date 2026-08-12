@@ -7,7 +7,7 @@ import {
   panelHeader,
   refreshIcons,
   toast,
-} from "../components/ui.js";
+} from "../components/ui.js?v=20260811-1";
 
 export const adsPage = {
   id: "ads",

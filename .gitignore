@@ -3,10 +3,6 @@
 .env.*
 !.env.example
 !.env.*.example
-api/.env
-api/.env.*
-!api/.env.example
-!api/.env.*.example
 *.local
 
 # PHP dependencies and tooling
@@ -19,9 +15,8 @@ phpunit.xml
 !phpunit.xml.dist
 
 # Runtime uploads and generated storage
-/api/uploads/*
-!/api/uploads/.htaccess
-/uploads/
+/uploads/*
+!/uploads/.htaccess
 /storage/
 /cache/
 /sessions/

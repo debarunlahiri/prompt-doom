@@ -8,7 +8,7 @@ import {
   hero,
   refreshIcons,
   toast,
-} from "../components/ui.js";
+} from "../components/ui.js?v=20260811-1";
 
 export const reportsPage = {
   id: "reports",

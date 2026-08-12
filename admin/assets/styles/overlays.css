@@ -123,6 +123,53 @@
   height: 44px;
   flex: 0 0 44px;
 }
+.custom-dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 34px;
+  overflow: visible;
+  text-align: center;
+}
+.custom-dialog-icon {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 20px;
+  place-items: center;
+  border-radius: 20px;
+  background: #6d4aff1a;
+  color: var(--purple);
+}
+.custom-dialog-icon.danger {
+  background: #dc4c4c17;
+  color: #c53f3f;
+}
+.custom-dialog-icon svg {
+  width: 30px;
+  height: 30px;
+}
+.custom-dialog h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 24px;
+}
+.custom-dialog p {
+  margin: 12px 0 28px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.65;
+}
+.custom-dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.custom-dialog-actions.single {
+  grid-template-columns: 1fr;
+}
+.custom-dialog-actions button {
+  min-height: 48px;
+  justify-content: center;
+}
 .modal form > label,
 .modal .form-grid > label {
   gap: 10px;

@@ -1,27 +1,82 @@
-import { api } from "../core/api.js";
+import { api, upload } from "../core/api.js";
 import { loadTaxonomies } from "../core/taxonomy-store.js";
 import { state } from "../core/state.js";
 import {
   $,
   $$,
   closeModal,
+  confirmDialog,
   empty,
   escapeHtml,
   filterBar,
+  formatDate,
   hero,
   icon,
   openModal,
   panel,
   refreshIcons,
   toast,
-} from "../components/ui.js";
+} from "../components/ui.js?v=20260811-1";
+
+function viewRows(items) {
+  return (
+    items
+      .map((view) => {
+        const registered = view.viewerType === "registered";
+        const label = registered ? view.visitorLabel : "Anonymous visitor";
+        const detail = registered
+          ? view.email
+          : view.sessionId || "Earlier anonymous view";
+        return `<tr><td><div class="person"><div class="avatar">${icon(registered ? "user-round" : "user-round-x")}</div><div><strong>${escapeHtml(label)}</strong><small>${escapeHtml(detail)}</small></div></div></td><td><span class="badge ${registered ? "active" : "draft"}">${registered ? "Registered" : "Anonymous"}</span></td><td>${escapeHtml(view.platform || "Unknown")}</td><td>${formatDate(view.viewedAt)}</td></tr>`;
+      })
+      .join("") ||
+    `<tr><td class="table-empty" colspan="4">${icon("inbox")}<span>No recorded viewers yet</span></td></tr>`
+  );
+}
+
+function copyRows(items) {
+  return (
+    items
+      .map((copy) => {
+        const registered = copy.copierType === "registered";
+        const label = registered ? copy.visitorLabel : "Anonymous visitor";
+        const detail = registered
+          ? copy.email
+          : copy.sessionId || "Earlier anonymous copy";
+        return `<tr><td><div class="person"><div class="avatar">${icon(registered ? "user-round" : "user-round-x")}</div><div><strong>${escapeHtml(label)}</strong><small>${escapeHtml(detail)}</small></div></div></td><td><span class="badge ${registered ? "active" : "draft"}">${registered ? "Registered" : "Anonymous"}</span></td><td>${escapeHtml(copy.platform || "Unknown")}</td><td>${formatDate(copy.copiedAt)}</td></tr>`;
+      })
+      .join("") ||
+    `<tr><td class="table-empty" colspan="4">${icon("copy")}<span>No recorded prompt copies yet</span></td></tr>`
+  );
+}
+
+async function openViewerDetails(image) {
+  openModal(
+    image.title,
+    `<div class="image-viewer-loading">${icon("loader-circle")} Loading viewer activity...</div>`,
+    "viewer-dialog",
+  );
+  try {
+    const data = await api(`/admin/images/${image.id}/views?limit=100`);
+    if (!$(".viewer-dialog")) return;
+    $(".viewer-dialog").innerHTML =
+      `<div class="modal-head"><h2>${escapeHtml(image.title)}</h2><button class="icon-button" data-close-modal aria-label="Close">${icon("x")}</button></div><img class="viewer-image" src="${escapeHtml(image.imageUrl || image.thumbnailUrl)}" alt="${escapeHtml(image.title)}"><div class="viewer-metrics"><span>${icon("eye")} ${Number(image.viewCount || 0).toLocaleString()} total views</span><span>${icon("user-round-check")} ${data.summary.registeredViews.toLocaleString()} signed-in views</span><span>${icon("user-round-x")} ${data.summary.anonymousViews.toLocaleString()} anonymous views</span><span>${icon("copy")} ${Number(image.copyCount || 0).toLocaleString()} copies</span></div><section class="viewer-activity"><div class="viewer-activity-head"><div><h3>Viewer activity</h3><p>Latest ${data.items.length.toLocaleString()} of ${data.pagination.total.toLocaleString()} recorded views</p></div></div><div class="table-wrap"><table><thead><tr><th>Viewer</th><th>Type</th><th>Platform</th><th>Viewed at</th></tr></thead><tbody>${viewRows(data.items)}</tbody></table></div></section><section class="viewer-activity copy-activity"><div class="viewer-activity-head"><div><h3>Prompt copy activity</h3><p>${data.copySummary.registeredCopies.toLocaleString()} signed-in and ${data.copySummary.anonymousCopies.toLocaleString()} anonymous copies</p></div></div><div class="table-wrap"><table><thead><tr><th>Copied by</th><th>Type</th><th>Platform</th><th>Copied at</th></tr></thead><tbody>${copyRows(data.copyItems)}</tbody></table></div></section>`;
+    $$("[data-close-modal]").forEach((button) => {
+      button.onclick = closeModal;
+    });
+    refreshIcons();
+  } catch (error) {
+    closeModal();
+    toast(error.message, "error");
+  }
+}
 
 function cards(items) {
   return (
     items
       .map(
         (image) =>
-          `<article class="image-card"><button data-view-image="${image.id}" class="image-thumb-button"><img src="${escapeHtml(image.thumbnailUrl || image.imageUrl)}" alt="${escapeHtml(image.title)}"></button><div class="image-card-body"><small>${escapeHtml(image.category?.name || "Uncategorized")}</small><h3>${escapeHtml(image.title)}</h3><p>${escapeHtml(image.mainPrompt || "No prompt preview")}</p><span class="badge ${image.status}">${image.status}</span></div><div class="card-actions"><button class="button" data-edit-image="${image.id}">${icon("pencil")} Edit</button><button class="button icon" data-status-image="${image.id}" title="${image.status === "published" ? "Unpublish" : "Publish"}">${icon(image.status === "published" ? "eye-off" : "check")}</button><button class="button danger icon" data-delete-image="${image.id}" title="Delete">${icon("trash-2")}</button></div></article>`,
+          `<article class="image-card"><button data-view-image="${image.id}" class="image-thumb-button"><img src="${escapeHtml(image.thumbnailUrl || image.imageUrl)}" data-original-src="${escapeHtml(image.imageUrl || "")}" alt="${escapeHtml(image.title)}"></button><div class="image-card-body"><small>${escapeHtml(image.category?.name || "Uncategorized")}</small><h3>${escapeHtml(image.title)}</h3><p>${escapeHtml(image.mainPrompt || "No prompt preview")}</p><div class="image-card-meta"><span class="badge ${image.status}">${image.status}</span><span>${icon("eye")} ${Number(image.viewCount || 0).toLocaleString()} views</span><span>${icon("copy")} ${Number(image.copyCount || 0).toLocaleString()} copies</span></div></div><div class="card-actions"><button class="button" data-view-image="${image.id}">${icon("users-round")} Viewers</button><button class="button" data-edit-image="${image.id}">${icon("pencil")} Edit</button><button class="button icon" data-status-image="${image.id}" title="${image.status === "published" ? "Unpublish" : "Publish"}">${icon(image.status === "published" ? "eye-off" : "check")}</button><button class="button danger icon" data-delete-image="${image.id}" title="Delete">${icon("trash-2")}</button></div></article>`,
       )
       .join("") ||
     empty("No images found", "Change the filters or add a new image.")
@@ -106,10 +161,20 @@ function openCropper(file, onApply) {
 
 function editor(image, reload) {
   const selectedTags = new Set((image?.tags || []).map((tag) => tag.id));
+  const shareBaseUrl = new URL("../share/", window.location.href).href;
+  const initialShareMessage =
+    image?.shareMessage ||
+    `${image?.title || "Image title"}\n${shareBaseUrl}${image?.id || "ID"}`;
   openModal(
     image ? "Edit image & prompt" : "Add new image",
-    `<form id="image-form" class="form-grid"><label>Title<input name="title" value="${escapeHtml(image?.title || "")}" minlength="2" maxlength="200" required></label><label>Category<select class="select-control" name="categoryId" required><option value="">Select category</option>${state.categories.map((category) => `<option value="${category.id}" ${category.id === image?.category?.id ? "selected" : ""}>${escapeHtml(category.name)}</option>`).join("")}</select></label><label>Status<select class="select-control" name="status"><option ${image?.status === "draft" ? "selected" : ""}>draft</option><option ${image?.status === "published" ? "selected" : ""}>published</option><option ${image?.status === "unpublished" ? "selected" : ""}>unpublished</option></select></label>${image ? "" : `<div class="span-2 artwork-field"><span class="field-label">Artwork image</span><div class="image-upload"><input id="artwork-input" name="image" type="file" accept="image/jpeg,image/png,image/webp,image/gif" required><img id="artwork-preview" alt="Selected artwork preview"><label class="upload-placeholder" for="artwork-input">${icon("image-up")}<strong>Select artwork</strong><small>JPEG, PNG, WebP or GIF</small></label><div class="upload-actions"><button type="button" id="crop-artwork">${icon("crop")} Crop image</button><label for="artwork-input">${icon("refresh-cw")} Replace image</label></div></div><small id="artwork-name" class="upload-filename">No artwork selected</small></div>`}<label class="span-2">Main prompt<textarea name="mainPrompt" required>${escapeHtml(image?.mainPrompt || "")}</textarea></label><label class="span-2">Negative prompt<textarea name="negativePrompt">${escapeHtml(image?.negativePrompt || "")}</textarea></label><fieldset class="span-2"><legend>Tags</legend><div class="checks">${state.tags.map((tag) => `<label><input type="checkbox" name="tagIds" value="${tag.id}" ${selectedTags.has(tag.id) ? "checked" : ""}> ${escapeHtml(tag.name)}</label>`).join("")}</div></fieldset><div class="form-actions span-2"><button type="button" class="button" data-close-modal>Cancel</button><button class="primary">${icon("save")} Save image</button></div></form>`,
+    `<form id="image-form" class="form-grid"><label>Title<input name="title" value="${escapeHtml(image?.title || "")}" minlength="2" maxlength="200" required></label><label>Category<select class="select-control" name="categoryId" required><option value="">Select category</option>${state.categories.map((category) => `<option value="${category.id}" ${category.id === image?.category?.id ? "selected" : ""}>${escapeHtml(category.name)}</option>`).join("")}</select></label><label>Status<select class="select-control" name="status"><option ${image?.status === "draft" ? "selected" : ""}>draft</option><option ${image?.status === "published" ? "selected" : ""}>published</option><option ${image?.status === "unpublished" ? "selected" : ""}>unpublished</option></select></label>${image ? "" : `<div class="span-2 artwork-field"><span class="field-label">Artwork image</span><div class="image-upload"><input id="artwork-input" name="image" type="file" accept="image/jpeg,image/png,image/gif" required><img id="artwork-preview" alt="Selected artwork preview"><div class="upload-placeholder">${icon("image-up")}<strong>Select artwork</strong><small>JPEG, PNG or GIF</small></div><div class="upload-actions"><button type="button" id="crop-artwork">${icon("crop")} Crop image</button><label for="artwork-input">${icon("refresh-cw")} Replace image</label></div></div><small id="artwork-name" class="upload-filename">No artwork selected</small></div><dialog id="upload-dialog" class="upload-dialog"><div class="upload-dialog-icon">${icon("loader-circle")}</div><h3 id="upload-dialog-title">Uploading image…</h3><p id="upload-dialog-copy">Please keep this window open while your artwork uploads.</p><div class="upload-progress-copy"><span id="upload-progress-label">Uploading image…</span><strong id="upload-percent">0%</strong></div><progress id="upload-progress-bar" max="100" value="0"></progress></dialog>`}<label class="span-2">Main prompt<textarea name="mainPrompt" required>${escapeHtml(image?.mainPrompt || "")}</textarea></label><label class="span-2">Mobile share preview<textarea id="share-preview" readonly>${escapeHtml(initialShareMessage)}</textarea></label><fieldset class="span-2"><legend>Tags</legend><div class="checks">${state.tags.map((tag) => `<label><input type="checkbox" name="tagIds" value="${tag.id}" ${selectedTags.has(tag.id) ? "checked" : ""}> ${escapeHtml(tag.name)}</label>`).join("")}</div></fieldset><div class="form-actions span-2"><button type="button" class="button" data-close-modal>Cancel</button><button class="primary">${icon("save")} Save image</button></div></form>`,
   );
+  const titleInput = $("#image-form input[name='title']");
+  const sharePreview = $("#share-preview");
+  titleInput.oninput = () => {
+    const title = titleInput.value.trim() || "Image title";
+    sharePreview.value = `${title}\n${shareBaseUrl}${image?.id || "ID"}`;
+  };
   if (!image) {
     const artworkInput = $("#artwork-input");
     const artworkPreview = $("#artwork-preview");
@@ -144,40 +209,80 @@ function editor(image, reload) {
   }
   $("#image-form").onsubmit = async (event) => {
     event.preventDefault();
-    const form = new FormData(event.target);
-    const tagIds = form.getAll("tagIds").map(Number);
-    if (image) {
-      const body = Object.fromEntries(form);
-      body.categoryId = Number(body.categoryId);
-      body.tagIds = tagIds;
-      await api(`/admin/images/${image.id}`, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-      });
-    } else {
-      const artwork = form.get("image");
-      form.delete("tagIds");
-      form.set("tagIds", JSON.stringify(tagIds));
-      form.set("thumbnail", artwork);
-      await api("/admin/images", { method: "POST", body: form });
+    const submitButton = event.target.querySelector(
+      'button[type="submit"], button.primary',
+    );
+    const submitButtonContent = submitButton.innerHTML;
+    submitButton.disabled = true;
+    submitButton.classList.add("is-loading");
+    submitButton.innerHTML = `${icon("loader-circle")}<span>${image ? "Saving image…" : "Uploading image…"}</span>`;
+    refreshIcons();
+    try {
+      const form = new FormData(event.target);
+      const tagIds = form.getAll("tagIds").map(Number);
+      if (image) {
+        const body = Object.fromEntries(form);
+        body.categoryId = Number(body.categoryId);
+        body.tagIds = tagIds;
+        await api(`/admin/images/${image.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+      } else {
+        form.delete("tagIds");
+        form.set("tagIds", JSON.stringify(tagIds));
+        const uploadDialog = $("#upload-dialog");
+        const progressBar = $("#upload-progress-bar");
+        const progressPercent = $("#upload-percent");
+        const progressLabel = $("#upload-progress-label");
+        const dialogTitle = $("#upload-dialog-title");
+        const dialogCopy = $("#upload-dialog-copy");
+        uploadDialog.oncancel = (cancelEvent) => cancelEvent.preventDefault();
+        uploadDialog.showModal();
+        await upload("/admin/images", form, (percent) => {
+          progressBar.value = percent;
+          progressPercent.textContent = `${percent}%`;
+          if (percent === 100) {
+            progressLabel.textContent = "Processing image…";
+            dialogTitle.textContent = "Processing image…";
+            dialogCopy.textContent =
+              "The upload is complete. We are preparing your artwork.";
+            submitButton.querySelector("span").textContent =
+              "Processing image…";
+          }
+        });
+      }
+      closeModal();
+      toast(image ? "Image updated." : "Image created.");
+      await reload();
+    } catch (error) {
+      const uploadDialog = $("#upload-dialog");
+      if (uploadDialog?.open) uploadDialog.close();
+      toast(error.message, "error");
+      submitButton.disabled = false;
+      submitButton.classList.remove("is-loading");
+      submitButton.innerHTML = submitButtonContent;
+      refreshIcons();
     }
-    closeModal();
-    toast(image ? "Image updated." : "Image created.");
-    await reload();
   };
   refreshIcons();
 }
 
 function bindActions(items, reload) {
+  $$(".image-thumb-button img").forEach((thumbnail) => {
+    thumbnail.onerror = () => {
+      const originalUrl = thumbnail.dataset.originalSrc;
+      if (originalUrl && thumbnail.src !== originalUrl) {
+        thumbnail.src = originalUrl;
+      }
+    };
+  });
   $$("[data-view-image]").forEach((button) => {
     button.onclick = () => {
       const image = items.find(
         (item) => item.id === Number(button.dataset.viewImage),
       );
-      openModal(
-        image.title,
-        `<img class="viewer-image" src="${escapeHtml(image.imageUrl || image.thumbnailUrl)}" alt="${escapeHtml(image.title)}">`,
-      );
+      openViewerDetails(image);
     };
   });
   $$("[data-edit-image]").forEach((button) => {
@@ -203,7 +308,15 @@ function bindActions(items, reload) {
   });
   $$("[data-delete-image]").forEach((button) => {
     button.onclick = async () => {
-      if (!window.confirm("Delete this image?")) return;
+      const confirmed = await confirmDialog({
+        title: "Delete image?",
+        message:
+          "This permanently removes the image, prompt data, and uploaded files.",
+        confirmLabel: "Delete image",
+        tone: "danger",
+        iconName: "trash-2",
+      });
+      if (!confirmed) return;
       await api(`/admin/images/${button.dataset.deleteImage}`, {
         method: "DELETE",
       });

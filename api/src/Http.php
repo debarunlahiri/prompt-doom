@@ -108,8 +108,81 @@ function asset_url(?string $storedUrl, array $config): ?string
         return $storedUrl;
     }
 
-    return rtrim((string) $config["app_url"], "/") .
-        substr($path, $uploadPosition);
+    return asset_base_url($config) . substr($path, $uploadPosition);
+}
+
+function asset_base_url(array $config): string
+{
+    $forwardedHost =
+        $_SERVER["HTTP_X_FORWARDED_HOST"] ?? $_SERVER["HTTP_HOST"] ?? "";
+    $requestHost = trim(explode(",", (string) $forwardedHost)[0]);
+    if (
+        $requestHost !== "" &&
+        preg_match('/^(?:\[[0-9a-f:]+\]|[a-z0-9.-]+)(?::\d+)?$/i', $requestHost)
+    ) {
+        $forwardedScheme = strtolower(
+            trim(
+                explode(
+                    ",",
+                    (string) ($_SERVER["HTTP_X_FORWARDED_PROTO"] ?? ""),
+                )[0],
+            ),
+        );
+        $scheme = in_array($forwardedScheme, ["http", "https"], true)
+            ? $forwardedScheme
+            : (!empty($_SERVER["HTTPS"]) && $_SERVER["HTTPS"] !== "off"
+                ? "https"
+                : "http");
+        $scriptName = (string) ($_SERVER["SCRIPT_NAME"] ?? "");
+        $sitePath = str_replace("\\", "/", dirname($scriptName));
+        $sitePath = preg_replace('#/api$#', '', $sitePath) ?? $sitePath;
+        $sitePath = in_array($sitePath, ["", "/", "."], true)
+            ? ""
+            : "/" . trim($sitePath, "/");
+
+        return "{$scheme}://{$requestHost}{$sitePath}";
+    }
+
+    $baseUrl = rtrim((string) $config["app_url"], "/");
+
+    // Non-web processes do not have request information, so derive the site
+    // root from APP_URL by removing its API suffix.
+    return preg_replace('#/api(?:/v\d+)?$#', '', $baseUrl) ?: $baseUrl;
+}
+
+function thumbnail_asset_url(
+    ?string $thumbnailUrl,
+    ?string $imageUrl,
+    array $config,
+): ?string {
+    $thumbnailPath = parse_url((string) $thumbnailUrl, PHP_URL_PATH);
+    $uploadPosition = is_string($thumbnailPath)
+        ? strpos($thumbnailPath, "/uploads/")
+        : false;
+
+    if ($uploadPosition !== false) {
+        $localPath =
+            __DIR__ . "/../.." . substr($thumbnailPath, $uploadPosition);
+        if (!is_file($localPath)) {
+            return asset_url($imageUrl, $config);
+        }
+    }
+
+    return asset_url($thumbnailUrl, $config) ?: asset_url($imageUrl, $config);
+}
+
+function image_share_payload(
+    int $imageId,
+    string $title,
+    array $config,
+): array
+{
+    $shareUrl = asset_base_url($config) . "/share/{$imageId}";
+
+    return [
+        "shareUrl" => $shareUrl,
+        "shareMessage" => trim($title) . "\n" . $shareUrl,
+    ];
 }
 
 function slugify(string $value): string

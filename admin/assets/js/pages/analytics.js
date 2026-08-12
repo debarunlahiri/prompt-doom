@@ -6,7 +6,7 @@ import {
   panel,
   panelHeader,
   refreshIcons,
-} from "../components/ui.js";
+} from "../components/ui.js?v=20260811-1";
 
 export const analyticsPage = {
   id: "analytics",

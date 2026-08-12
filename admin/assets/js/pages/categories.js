@@ -1,4 +1,4 @@
-import { createTaxonomyPage } from "./taxonomy.js";
+import { createTaxonomyPage } from "./taxonomy.js?v=20260811-1";
 export const categoriesPage = createTaxonomyPage({
   id: "categories",
   label: "Categories",

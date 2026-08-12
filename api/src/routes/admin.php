@@ -2,9 +2,22 @@
 
 declare(strict_types=1);
 
+/**
+ * This route file is included by api/index.php after the shared request context
+ * has been initialized. These annotations make that context visible to static
+ * analyzers such as Intelephense without redeclaring or replacing the values.
+ *
+ * @var array<string, mixed> $config
+ * @var PDO $db
+ * @var string $method
+ * @var string $path
+ * @var null|string $databaseOperation
+ */
+
 $auth = current_auth($config, "admin");
 $route = substr($path, strlen("/api/v1/admin/"));
 $body = input();
+$databaseOperation = "Processing admin {$method} {$route}";
 
 function audit(
     PDO $db,
@@ -103,8 +116,20 @@ if ($method === "GET" && $route === "images") {
         "SELECT t.id,t.name,t.slug,t.status FROM image_tags it JOIN tags t ON t.id=it.tag_id WHERE it.image_id=?",
     );
     foreach ($items as &$item) {
+        $item = array_merge(
+            $item,
+            image_share_payload(
+                (int) $item["id"],
+                (string) $item["title"],
+                $config,
+            ),
+        );
         $item["imageUrl"] = asset_url($item["imageUrl"], $config);
-        $item["thumbnailUrl"] = asset_url($item["thumbnailUrl"], $config);
+        $item["thumbnailUrl"] = thumbnail_asset_url(
+            $item["thumbnailUrl"],
+            $item["imageUrl"],
+            $config,
+        );
         $item["category"] = $item["category_id"]
             ? [
                 "id" => (int) $item["category_id"],
@@ -134,28 +159,176 @@ if ($method === "GET" && $route === "images") {
     ]);
 }
 
+if (
+    preg_match('#^images/(\d+)/views$#', $route, $match) &&
+    $method === "GET"
+) {
+    [$page, $limit, $offset] = page_params();
+    $imageId = (int) $match[1];
+    $image = $db->prepare(
+        "SELECT id,title,view_count AS viewCount FROM images WHERE id=? AND deleted_at IS NULL",
+    );
+    $image->execute([$imageId]);
+    $imageRecord = $image->fetch();
+    if (!$imageRecord) {
+        throw new ApiException(404, "Image not found", "IMAGE_NOT_FOUND");
+    }
+
+    $count = $db->prepare(
+        "SELECT COUNT(*) FROM analytics_events WHERE image_id=? AND event_type='image_view'",
+    );
+    $count->execute([$imageId]);
+    $total = (int) $count->fetchColumn();
+
+    $summary = $db->prepare(
+        "SELECT SUM(user_id IS NOT NULL) AS registeredViews,SUM(user_id IS NULL) AS anonymousViews,COUNT(DISTINCT user_id) AS registeredViewers,COUNT(DISTINCT CASE WHEN user_id IS NULL THEN session_id END) AS anonymousViewers FROM analytics_events WHERE image_id=? AND event_type='image_view'",
+    );
+    $summary->execute([$imageId]);
+    $viewSummary = $summary->fetch();
+
+    $views = $db->prepare(
+        "SELECT ae.id,ae.user_id AS userId,ae.session_id AS sessionId,ae.platform,ae.occurred_at AS viewedAt,u.name,u.email,u.avatar_url AS avatarUrl FROM analytics_events ae LEFT JOIN users u ON u.id=ae.user_id WHERE ae.image_id=? AND ae.event_type='image_view' ORDER BY ae.occurred_at DESC,ae.id DESC LIMIT {$limit} OFFSET {$offset}",
+    );
+    $views->execute([$imageId]);
+    $items = $views->fetchAll();
+    foreach ($items as &$item) {
+        $item["viewerType"] = $item["userId"] ? "registered" : "anonymous";
+        $item["visitorLabel"] = $item["userId"]
+            ? $item["name"]
+            : ($item["sessionId"] ?: "Anonymous visitor");
+        unset($item["name"]);
+    }
+
+    $copyCount = $db->prepare(
+        "SELECT COUNT(*) FROM analytics_events WHERE image_id=? AND event_type='prompt_copy'",
+    );
+    $copyCount->execute([$imageId]);
+    $totalCopies = (int) $copyCount->fetchColumn();
+    $copySummary = $db->prepare(
+        "SELECT SUM(user_id IS NOT NULL) AS registeredCopies,SUM(user_id IS NULL) AS anonymousCopies,COUNT(DISTINCT user_id) AS registeredCopiers,COUNT(DISTINCT CASE WHEN user_id IS NULL THEN session_id END) AS anonymousCopiers FROM analytics_events WHERE image_id=? AND event_type='prompt_copy'",
+    );
+    $copySummary->execute([$imageId]);
+    $copySummaryRecord = $copySummary->fetch();
+    $copies = $db->prepare(
+        "SELECT ae.id,ae.user_id AS userId,ae.session_id AS sessionId,ae.platform,ae.occurred_at AS copiedAt,u.name,u.email,u.avatar_url AS avatarUrl FROM analytics_events ae LEFT JOIN users u ON u.id=ae.user_id WHERE ae.image_id=? AND ae.event_type='prompt_copy' ORDER BY ae.occurred_at DESC,ae.id DESC LIMIT {$limit} OFFSET {$offset}",
+    );
+    $copies->execute([$imageId]);
+    $copyItems = $copies->fetchAll();
+    foreach ($copyItems as &$copyItem) {
+        $copyItem["copierType"] = $copyItem["userId"]
+            ? "registered"
+            : "anonymous";
+        $copyItem["visitorLabel"] = $copyItem["userId"]
+            ? $copyItem["name"]
+            : ($copyItem["sessionId"] ?: "Anonymous visitor");
+        unset($copyItem["name"]);
+    }
+
+    success([
+        "image" => $imageRecord,
+        "summary" => [
+            "registeredViews" => (int) ($viewSummary["registeredViews"] ?? 0),
+            "anonymousViews" => (int) ($viewSummary["anonymousViews"] ?? 0),
+            "registeredViewers" => (int) ($viewSummary["registeredViewers"] ?? 0),
+            "anonymousViewers" => (int) ($viewSummary["anonymousViewers"] ?? 0),
+        ],
+        "items" => $items,
+        "pagination" => pagination($page, $limit, $total),
+        "copySummary" => [
+            "registeredCopies" => (int) ($copySummaryRecord["registeredCopies"] ?? 0),
+            "anonymousCopies" => (int) ($copySummaryRecord["anonymousCopies"] ?? 0),
+            "registeredCopiers" => (int) ($copySummaryRecord["registeredCopiers"] ?? 0),
+            "anonymousCopiers" => (int) ($copySummaryRecord["anonymousCopiers"] ?? 0),
+        ],
+        "copyItems" => $copyItems,
+        "copyPagination" => pagination($page, $limit, $totalCopies),
+    ]);
+}
+
 if ($method === "POST" && $route === "images") {
     require_fields($body, ["title", "categoryId", "mainPrompt", "status"]);
-    if (empty($_FILES["image"]) || empty($_FILES["thumbnail"])) {
+    $categoryId = filter_var(
+        $body["categoryId"],
+        FILTER_VALIDATE_INT,
+        ["options" => ["min_range" => 1]],
+    );
+    if ($categoryId === false) {
         throw new ApiException(
             422,
-            "Image and thumbnail are required",
+            "Select a valid category",
+            "INVALID_CATEGORY",
+            ["categoryId" => $body["categoryId"]],
+        );
+    }
+    $categoryLookup = $db->prepare("SELECT id FROM categories WHERE id=?");
+    $categoryLookup->execute([$categoryId]);
+    if (!$categoryLookup->fetchColumn()) {
+        throw new ApiException(
+            422,
+            "The selected category does not exist",
+            "CATEGORY_NOT_FOUND",
+            ["categoryId" => $categoryId],
+        );
+    }
+
+    $decodedTagIds = json_decode(
+        (string) ($body["tagIds"] ?? "[]"),
+        true,
+    );
+    if (!is_array($decodedTagIds)) {
+        throw new ApiException(
+            422,
+            "Tag IDs must be a JSON array",
+            "INVALID_TAGS",
+        );
+    }
+    $tagIds = array_values(
+        array_unique(
+            array_filter(
+                array_map("intval", $decodedTagIds),
+                fn(int $tagId): bool => $tagId > 0,
+            ),
+        ),
+    );
+    if ($tagIds) {
+        $tagMarks = implode(",", array_fill(0, count($tagIds), "?"));
+        $tagLookup = $db->prepare(
+            "SELECT id FROM tags WHERE id IN ({$tagMarks})",
+        );
+        $tagLookup->execute($tagIds);
+        $existingTagIds = array_map(
+            "intval",
+            $tagLookup->fetchAll(PDO::FETCH_COLUMN),
+        );
+        $missingTagIds = array_values(array_diff($tagIds, $existingTagIds));
+        if ($missingTagIds) {
+            throw new ApiException(
+                422,
+                "One or more selected tags do not exist",
+                "TAGS_NOT_FOUND",
+                ["tagIds" => $missingTagIds],
+            );
+        }
+    }
+    if (empty($_FILES["image"])) {
+        throw new ApiException(
+            422,
+            "Image is required",
             "FILES_REQUIRED",
         );
     }
     $allowed = [
         "image/jpeg" => "jpg",
         "image/png" => "png",
-        "image/webp" => "webp",
         "image/gif" => "gif",
     ];
+    if (function_exists("imagecreatefromwebp")) {
+        $allowed["image/webp"] = "webp";
+    }
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $saved = [];
     $maxUploadBytes = max(1, (int) $config["max_upload_mb"]) * 1024 * 1024;
-    foreach (
-        ["image" => "images", "thumbnail" => "thumbnails"]
-        as $field => $folder
-    ) {
+    foreach (["image" => "images"] as $field => $folder) {
         $upload = $_FILES[$field];
         if (($upload["error"] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
             throw new ApiException(
@@ -200,13 +373,13 @@ if ($method === "POST" && $route === "images") {
                 "INVALID_IMAGE_CONTENT",
             );
         }
-        $directory = __DIR__ . "/../../uploads/" . $folder;
+        $directory = __DIR__ . "/../../../uploads/" . $folder;
         if (
             (!is_dir($directory) && !mkdir($directory, 0775, true)) ||
             !is_writable($directory)
         ) {
             foreach ($saved as $savedFile) {
-                $savedPath = __DIR__ . "/../../" . $savedFile["key"];
+                $savedPath = __DIR__ . "/../../../" . $savedFile["key"];
                 if (is_file($savedPath)) {
                     unlink($savedPath);
                 }
@@ -227,7 +400,7 @@ if ($method === "POST" && $route === "images") {
             )
         ) {
             foreach ($saved as $savedFile) {
-                $savedPath = __DIR__ . "/../../" . $savedFile["key"];
+                $savedPath = __DIR__ . "/../../../" . $savedFile["key"];
                 if (is_file($savedPath)) {
                     unlink($savedPath);
                 }
@@ -240,67 +413,139 @@ if ($method === "POST" && $route === "images") {
         }
         $saved[$field] = [
             "key" => "uploads/{$folder}/{$name}",
-            "url" => $config["app_url"] . "/uploads/{$folder}/{$name}",
+            "url" => asset_base_url($config) . "/uploads/{$folder}/{$name}",
         ];
     }
-    $slug = slugify((string) $body["title"]) . "-" . time();
-    $db->beginTransaction();
-    $statement = $db->prepare(
-        'INSERT INTO images (public_id,title,slug,category_id,image_url,image_key,thumbnail_url,thumbnail_key,ai_model,status,published_at,created_by) VALUES (UUID(),?,?,?,?,?,?,?,?,?,IF(?="published",NOW(),NULL),?)',
-    );
-    $statement->execute([
-        $body["title"],
-        $slug,
-        (int) $body["categoryId"],
-        $saved["image"]["url"],
-        $saved["image"]["key"],
-        $saved["thumbnail"]["url"],
-        $saved["thumbnail"]["key"],
-        ($body["aiModel"] ?? null) ?: null,
-        $body["status"],
-        $body["status"],
-        $auth["id"],
-    ]);
-    $id = (int) $db->lastInsertId();
-    $db->prepare(
-        "INSERT INTO image_prompts (image_id,main_prompt,negative_prompt) VALUES (?,?,?)",
-    )->execute([$id, $body["mainPrompt"], $body["negativePrompt"] ?: null]);
-    $db->prepare(
-        "INSERT INTO prompt_revisions (image_id,revision,main_prompt,negative_prompt,change_note,created_by) VALUES (?,1,?,?,?,?)",
-    )->execute([
-        $id,
-        $body["mainPrompt"],
-        $body["negativePrompt"] ?: null,
-        "Initial prompt",
-        $auth["id"],
-    ]);
-    $assetInsert = $db->prepare(
-        "INSERT INTO image_assets (public_id,image_id,kind,bucket,object_key,public_url,mime_type,byte_size,checksum_sha256,uploaded_by) VALUES (UUID(),?,?,?,?,?,?,?,?,?)",
-    );
-    foreach (
-        ["image" => "original", "thumbnail" => "thumbnail"]
-        as $field => $kind
+    $thumbnailDirectory = __DIR__ . "/../../../uploads/thumbnails";
+    if (
+        (!is_dir($thumbnailDirectory) &&
+            !mkdir($thumbnailDirectory, 0775, true)) ||
+        !is_writable($thumbnailDirectory)
     ) {
-        $assetInsert->execute([
-            $id,
-            $kind,
-            "local",
-            $saved[$field]["key"],
-            $saved[$field]["url"],
-            $finfo->file(__DIR__ . "/../../" . $saved[$field]["key"]),
-            filesize(__DIR__ . "/../../" . $saved[$field]["key"]),
-            hash_file("sha256", __DIR__ . "/../../" . $saved[$field]["key"]),
+        unlink(__DIR__ . "/../../../" . $saved["image"]["key"]);
+        throw new ApiException(
+            500,
+            "The thumbnail directory is not writable",
+            "UPLOAD_STORAGE_NOT_WRITABLE",
+            ["field" => "thumbnail"],
+        );
+    }
+    $thumbnailName = bin2hex(random_bytes(16)) . ".jpg";
+    $thumbnailDestination = "{$thumbnailDirectory}/{$thumbnailName}";
+    try {
+        create_compressed_thumbnail(
+            __DIR__ . "/../../../" . $saved["image"]["key"],
+            (string) $finfo->file(
+                __DIR__ . "/../../../" . $saved["image"]["key"],
+            ),
+            $thumbnailDestination,
+            max(240, (int) $config["thumbnail_max_dimension"]),
+            (int) $config["thumbnail_jpeg_quality"],
+        );
+    } catch (Throwable $error) {
+        unlink(__DIR__ . "/../../../" . $saved["image"]["key"]);
+        if (is_file($thumbnailDestination)) {
+            unlink($thumbnailDestination);
+        }
+        throw $error;
+    }
+    $saved["thumbnail"] = [
+        "key" => "uploads/thumbnails/{$thumbnailName}",
+        "url" => asset_base_url($config) . "/uploads/thumbnails/{$thumbnailName}",
+    ];
+    $slug = slugify((string) $body["title"]) . "-" . time();
+    $databaseOperation = "Starting the image creation transaction";
+    $db->beginTransaction();
+    try {
+        $databaseOperation = "Creating the image record in the images table";
+        $statement = $db->prepare(
+            "INSERT INTO images (public_id,title,slug,category_id,image_url,image_key,thumbnail_url,thumbnail_key,ai_model,status,published_at,created_by) VALUES (UUID(),?,?,?,?,?,?,?,?,?,?,?)",
+        );
+        $statement->execute([
+            $body["title"],
+            $slug,
+            $categoryId,
+            $saved["image"]["url"],
+            $saved["image"]["key"],
+            $saved["thumbnail"]["url"],
+            $saved["thumbnail"]["key"],
+            ($body["aiModel"] ?? null) ?: "",
+            $body["status"],
+            $body["status"] === "published" ? gmdate("Y-m-d H:i:s") : null,
             $auth["id"],
         ]);
+        $id = (int) $db->lastInsertId();
+        $databaseOperation =
+            "Saving the main and negative prompts in the image_prompts table";
+        $db->prepare(
+            "INSERT INTO image_prompts (image_id,main_prompt,negative_prompt) VALUES (?,?,?)",
+        )->execute([
+            $id,
+            $body["mainPrompt"],
+            ($body["negativePrompt"] ?? null) ?: null,
+        ]);
+        $databaseOperation =
+            "Saving revision 1 in the prompt_revisions table";
+        $db->prepare(
+            "INSERT INTO prompt_revisions (image_id,revision,main_prompt,negative_prompt,change_note,created_by) VALUES (?,1,?,?,?,?)",
+        )->execute([
+            $id,
+            $body["mainPrompt"],
+            ($body["negativePrompt"] ?? null) ?: null,
+            "Initial prompt",
+            $auth["id"],
+        ]);
+        $databaseOperation =
+            "Preparing image asset records for the image_assets table";
+        $assetInsert = $db->prepare(
+            "INSERT INTO image_assets (public_id,image_id,kind,bucket,object_key,public_url,mime_type,byte_size,checksum_sha256,uploaded_by) VALUES (UUID(),?,?,?,?,?,?,?,?,?)",
+        );
+        foreach (
+            ["image" => "original", "thumbnail" => "thumbnail"]
+            as $field => $kind
+        ) {
+            $databaseOperation =
+                "Saving the {$kind} asset in the image_assets table";
+            $assetInsert->execute([
+                $id,
+                $kind,
+                "local",
+                $saved[$field]["key"],
+                $saved[$field]["url"],
+                $finfo->file(__DIR__ . "/../../../" . $saved[$field]["key"]),
+                filesize(__DIR__ . "/../../../" . $saved[$field]["key"]),
+                hash_file(
+                    "sha256",
+                    __DIR__ . "/../../../" . $saved[$field]["key"],
+                ),
+                $auth["id"],
+            ]);
+        }
+        $databaseOperation =
+            "Preparing image tag links for the image_tags table";
+        $tagInsert = $db->prepare(
+            "INSERT IGNORE INTO image_tags (image_id,tag_id) VALUES (?,?)",
+        );
+        foreach ($tagIds as $tagId) {
+            $databaseOperation =
+                "Linking tag {$tagId} to the image in the image_tags table";
+            $tagInsert->execute([$id, (int) $tagId]);
+        }
+        $databaseOperation = "Committing the image creation transaction";
+        $db->commit();
+    } catch (Throwable $error) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        foreach ($saved as $savedFile) {
+            $savedPath = __DIR__ . "/../../../" . $savedFile["key"];
+            if (is_file($savedPath)) {
+                unlink($savedPath);
+            }
+        }
+        throw $error;
     }
-    $tagIds = json_decode((string) ($body["tagIds"] ?? "[]"), true) ?: [];
-    $tagInsert = $db->prepare(
-        "INSERT IGNORE INTO image_tags (image_id,tag_id) VALUES (?,?)",
-    );
-    foreach ($tagIds as $tagId) {
-        $tagInsert->execute([$id, (int) $tagId]);
-    }
-    $db->commit();
+    $databaseOperation = "Writing the image creation entry to audit_logs";
     audit($db, $auth["id"], "create", "image", $id, [
         "title" => $body["title"],
         "status" => $body["status"],
@@ -311,11 +556,77 @@ if ($method === "POST" && $route === "images") {
 if (preg_match('#^images/(\d+)$#', $route, $match)) {
     $id = (int) $match[1];
     if ($method === "DELETE") {
-        $db->prepare(
-            "UPDATE images SET deleted_at=NOW(),status='unpublished' WHERE id=?",
-        )->execute([$id]);
-        audit($db, $auth["id"], "delete", "image", $id);
-        json_response(null, 204);
+        $databaseOperation = "Starting the image deletion transaction";
+        $db->beginTransaction();
+        try {
+            $databaseOperation = "Loading the image and its uploaded file keys";
+            $existing = $db->prepare(
+                "SELECT id,title,image_key,thumbnail_key FROM images WHERE id=? FOR UPDATE",
+            );
+            $existing->execute([$id]);
+            $image = $existing->fetch();
+            if (!$image) {
+                $db->rollBack();
+                success([
+                    "id" => $id,
+                    "deleted" => false,
+                    "alreadyDeleted" => true,
+                ]);
+            }
+
+            $databaseOperation = "Writing the image deletion entry to audit_logs";
+            audit($db, $auth["id"], "delete", "image", $id, [
+                "title" => $image["title"],
+            ]);
+
+            $databaseOperation =
+                "Deleting content reports associated with the image";
+            $db->prepare("DELETE FROM content_reports WHERE image_id=?")->execute([
+                $id,
+            ]);
+
+            $databaseOperation =
+                "Permanently deleting the image and related database records";
+            $delete = $db->prepare("DELETE FROM images WHERE id=?");
+            $delete->execute([$id]);
+            if ($delete->rowCount() !== 1) {
+                throw new RuntimeException("The image record was not deleted");
+            }
+
+            $databaseOperation = "Committing the image deletion transaction";
+            $db->commit();
+        } catch (Throwable $error) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $error;
+        }
+
+        $deletedFiles = [];
+        $failedFiles = [];
+        foreach (["image_key", "thumbnail_key"] as $keyField) {
+            $storedKey = (string) ($image[$keyField] ?? "");
+            if (!str_starts_with($storedKey, "uploads/")) {
+                continue;
+            }
+            $filePath = __DIR__ . "/../../../" . $storedKey;
+            if (!is_file($filePath)) {
+                continue;
+            }
+            if (unlink($filePath)) {
+                $deletedFiles[] = $storedKey;
+            } else {
+                $failedFiles[] = $storedKey;
+                error_log("Unable to delete uploaded image file: {$storedKey}");
+            }
+        }
+
+        success([
+            "id" => $id,
+            "deleted" => true,
+            "deletedFiles" => $deletedFiles,
+            "failedFiles" => $failedFiles,
+        ]);
     }
     if ($method === "PATCH") {
         $sets = [];
@@ -433,9 +744,80 @@ foreach (
     }
     if (preg_match("#^{$entity}/(\\d+)$#", $route, $match)) {
         $id = (int) $match[1];
+        $entityType = $entity === "categories" ? "category" : "tag";
         if ($method === "DELETE") {
-            $db->prepare("DELETE FROM {$entity} WHERE id=?")->execute([$id]);
-            json_response(null, 204);
+            $db->beginTransaction();
+            try {
+                $existing = $db->prepare(
+                    "SELECT id,name FROM {$entity} WHERE id=? FOR UPDATE",
+                );
+                $existing->execute([$id]);
+                $record = $existing->fetch();
+                if (!$record) {
+                    $db->rollBack();
+                    success([
+                        "id" => $id,
+                        "deleted" => false,
+                        "alreadyDeleted" => true,
+                    ]);
+                }
+
+                $detachedImages = 0;
+                $detachedChildren = 0;
+                if ($entity === "categories") {
+                    $detachImages = $db->prepare(
+                        "UPDATE images SET category_id=NULL WHERE category_id=?",
+                    );
+                    $detachImages->execute([$id]);
+                    $detachedImages = $detachImages->rowCount();
+
+                    $detachChildren = $db->prepare(
+                        "UPDATE categories SET parent_id=NULL WHERE parent_id=?",
+                    );
+                    $detachChildren->execute([$id]);
+                    $detachedChildren = $detachChildren->rowCount();
+                } else {
+                    $detachTags = $db->prepare(
+                        "DELETE FROM image_tags WHERE tag_id=?",
+                    );
+                    $detachTags->execute([$id]);
+                    $detachedImages = $detachTags->rowCount();
+                }
+
+                $delete = $db->prepare("DELETE FROM {$entity} WHERE id=?");
+                $delete->execute([$id]);
+                if ($delete->rowCount() !== 1) {
+                    throw new RuntimeException(
+                        "The {$entity} record was not deleted",
+                    );
+                }
+
+                audit(
+                    $db,
+                    $auth["id"],
+                    "delete",
+                    $entityType,
+                    $id,
+                    [
+                        "name" => $record["name"],
+                        "detachedImages" => $detachedImages,
+                        "detachedChildren" => $detachedChildren,
+                    ],
+                );
+                $db->commit();
+            } catch (Throwable $error) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                throw $error;
+            }
+
+            success([
+                "id" => $id,
+                "deleted" => true,
+                "detachedImages" => $detachedImages,
+                "detachedChildren" => $detachedChildren,
+            ]);
         }
         if ($method === "PATCH") {
             $sets = [];
@@ -461,7 +843,7 @@ foreach (
             $db->prepare(
                 "UPDATE {$entity} SET " . implode(",", $sets) . " WHERE id=?",
             )->execute($params);
-            audit($db, $auth["id"], "update", rtrim($entity, "s"), $id, $body);
+            audit($db, $auth["id"], "update", $entityType, $id, $body);
             $st = $db->prepare("SELECT * FROM {$entity} WHERE id=?");
             $st->execute([$id]);
             success(["item" => $st->fetch()]);
@@ -512,6 +894,11 @@ if ($method === "GET" && $route === "analytics") {
             ->fetchColumn(),
         "favorites" => (int) $db
             ->query("SELECT COUNT(*) FROM user_favorites")
+            ->fetchColumn(),
+        "totalViews" => (int) $db
+            ->query(
+                "SELECT COALESCE(SUM(view_count),0) FROM images WHERE deleted_at IS NULL",
+            )
             ->fetchColumn(),
     ];
     success(["summary" => $summary, "events" => $events]);

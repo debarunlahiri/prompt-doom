@@ -3,6 +3,7 @@ import {
   $,
   $$,
   closeModal,
+  confirmDialog,
   dataTable,
   emptyTableRow,
   escapeHtml,
@@ -13,7 +14,7 @@ import {
   panel,
   refreshIcons,
   toast,
-} from "../components/ui.js";
+} from "../components/ui.js?v=20260811-1";
 
 function editor(config, item, reload) {
   openModal(
@@ -92,7 +93,14 @@ export function createTaxonomyPage(config) {
         });
         $$("[data-delete-taxonomy]").forEach((button) => {
           button.onclick = async () => {
-            if (!window.confirm(`Delete this ${config.singular}?`)) return;
+            const confirmed = await confirmDialog({
+              title: `Delete ${config.singular}?`,
+              message: `Are you sure you want to delete this ${config.singular}? This action cannot be undone.`,
+              confirmLabel: `Delete ${config.singular}`,
+              tone: "danger",
+              iconName: "trash-2",
+            });
+            if (!confirmed) return;
             await api(`/admin/${config.id}/${button.dataset.deleteTaxonomy}`, {
               method: "DELETE",
             });

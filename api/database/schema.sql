@@ -1,3 +1,12 @@
+-- Prompt Doom canonical database schema
+-- Schema revision: 2026-08-10
+--
+-- Taxonomy deletion rules:
+--   categories -> images.category_id and child categories.parent_id become NULL.
+--   tags -> related image_tags rows are deleted.
+-- Upload tables used by the admin API:
+--   images, image_prompts, prompt_revisions, image_assets and image_tags.
+
 CREATE DATABASE IF NOT EXISTS prompt_doom CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 USE prompt_doom;
@@ -6,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   public_id CHAR(36) NOT NULL UNIQUE,
   email VARCHAR(190) NOT NULL UNIQUE,
+  google_uid VARCHAR(128) NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
   name VARCHAR(120) NOT NULL,
   avatar_url VARCHAR(500) NULL,
@@ -382,3 +392,17 @@ VALUES
   (1)
 ON DUPLICATE KEY UPDATE
   id = id;
+
+-- Existing-installation compatibility updates.
+-- CREATE TABLE IF NOT EXISTS does not add or modify columns in an older
+-- database, so keep production installations aligned with the canonical
+-- definitions above. These statements are safe to run more than once.
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS google_uid VARCHAR(128) NULL UNIQUE AFTER email;
+
+ALTER TABLE images
+  MODIFY ai_model VARCHAR(100) NULL;
+
+UPDATE images
+SET ai_model = NULL
+WHERE ai_model = '';

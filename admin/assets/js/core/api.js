@@ -13,7 +13,11 @@ export async function api(path, options = {}, retry = true) {
     headers.Authorization = `Bearer ${state.session.tokens.accessToken}`;
   }
 
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers,
+    cache: "no-store",
+  });
   if (response.status === 204) return null;
   const payload = await response.json().catch(() => ({
     success: false,
@@ -48,6 +52,45 @@ export async function api(path, options = {}, retry = true) {
   if (!response.ok || payload.success === false)
     throw new Error(payload.error?.message || "Request failed");
   return payload.data;
+}
+
+export function upload(path, body, onProgress = () => {}) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `${API_BASE}${path}`);
+    if (state.session?.tokens?.accessToken) {
+      request.setRequestHeader(
+        "Authorization",
+        `Bearer ${state.session.tokens.accessToken}`,
+      );
+    }
+    request.responseType = "json";
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+    request.onerror = () =>
+      reject(new Error("Upload failed. Check your connection and try again."));
+    request.onload = () => {
+      const payload = request.response;
+      if (
+        request.status < 200 ||
+        request.status >= 300 ||
+        payload?.success === false
+      ) {
+        reject(
+          new Error(
+            payload?.error?.message || `Upload failed (${request.status}).`,
+          ),
+        );
+        return;
+      }
+      onProgress(100);
+      resolve(payload?.data);
+    };
+    request.send(body);
+  });
 }
 
 export async function login(email, password) {

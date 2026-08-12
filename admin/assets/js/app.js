@@ -1,15 +1,25 @@
 import { login, logout } from "./core/api.js";
 import { saveSection, saveSession, state } from "./core/state.js";
-import { $, $$, loading, refreshIcons } from "./components/ui.js";
-import { dashboardPage } from "./pages/dashboard.js";
-import { usersPage } from "./pages/users.js";
-import { imagesPage } from "./pages/images.js";
-import { categoriesPage } from "./pages/categories.js";
-import { tagsPage } from "./pages/tags.js";
-import { adsPage } from "./pages/ads.js";
-import { analyticsPage } from "./pages/analytics.js";
-import { reportsPage } from "./pages/reports.js";
-import { profilePage } from "./pages/profile.js";
+import {
+  $,
+  $$,
+  confirmDialog,
+  loading,
+  refreshIcons,
+} from "./components/ui.js?v=20260811-1";
+import { dashboardPage } from "./pages/dashboard.js?v=20260811-1";
+import { usersPage } from "./pages/users.js?v=20260811-1";
+import { imagesPage } from "./pages/images.js?v=20260811-1";
+import { categoriesPage } from "./pages/categories.js?v=20260811-1";
+import { tagsPage } from "./pages/tags.js?v=20260811-1";
+import { adsPage } from "./pages/ads.js?v=20260811-1";
+import { analyticsPage } from "./pages/analytics.js?v=20260811-1";
+import { reportsPage } from "./pages/reports.js?v=20260811-1";
+import { profilePage } from "./pages/profile.js?v=20260811-1";
+
+if (window.location.search) {
+  window.history.replaceState(null, "", window.location.pathname);
+}
 
 const pages = [
   dashboardPage,
@@ -85,6 +95,14 @@ $("#login-form").onsubmit = async (event) => {
 };
 
 $("#logout").onclick = async () => {
+  const confirmed = await confirmDialog({
+    title: "Log out?",
+    message: "Are you sure you want to log out?",
+    confirmLabel: "Log out",
+    tone: "danger",
+    iconName: "log-out",
+  });
+  if (!confirmed) return;
   try {
     await logout();
   } finally {

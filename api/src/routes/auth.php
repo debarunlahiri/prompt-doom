@@ -2,8 +2,72 @@
 
 declare(strict_types=1);
 
+/**
+ * Request context provided by api/index.php.
+ *
+ * @var array<string, mixed> $config
+ * @var PDO $db
+ * @var string $method
+ * @var string $path
+ */
+
 $action = substr($path, strlen("/api/v1/auth/"));
 $body = input();
+
+if ($method === "POST" && $action === "google") {
+    require_fields($body, ["idToken"]);
+    $claims = verify_google_id_token(
+        (string) $body["idToken"],
+        (string) $config["google_web_client_id"],
+    );
+    $googleUid = (string) $claims["sub"];
+    $email = strtolower(trim((string) $claims["email"]));
+    $name = trim((string) ($claims["name"] ?? strtok($email, "@")));
+    $avatarUrl = isset($claims["picture"])
+        ? substr((string) $claims["picture"], 0, 500)
+        : null;
+
+    $statement = $db->prepare(
+        "SELECT * FROM users WHERE google_uid=? OR email=? LIMIT 1",
+    );
+    $statement->execute([$googleUid, $email]);
+    $account = $statement->fetch();
+
+    if ($account && $account["google_uid"] && $account["google_uid"] !== $googleUid) {
+        throw new ApiException(409, "This email is linked to another Google account", "GOOGLE_ACCOUNT_CONFLICT");
+    }
+    if ($account && $account["status"] !== "active") {
+        throw new ApiException(403, "Account is not active", "ACCOUNT_INACTIVE");
+    }
+
+    if ($account) {
+        $db->prepare(
+            "UPDATE users SET google_uid=?,name=?,avatar_url=COALESCE(?,avatar_url),email_verified_at=COALESCE(email_verified_at,NOW()),last_login_at=NOW(),failed_login_count=0,locked_until=NULL WHERE id=?",
+        )->execute([$googleUid, $name, $avatarUrl, $account["id"]]);
+        $id = (int) $account["id"];
+    } else {
+        $db->prepare(
+            "INSERT INTO users (public_id,email,google_uid,password_hash,name,avatar_url,email_verified_at,last_login_at) VALUES (UUID(),?,?,?,?,?,NOW(),NOW())",
+        )->execute([
+            $email,
+            $googleUid,
+            password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT),
+            $name,
+            $avatarUrl,
+        ]);
+        $id = (int) $db->lastInsertId();
+    }
+
+    success([
+        "user" => [
+            "id" => $id,
+            "name" => $name,
+            "email" => $email,
+            "avatarUrl" => $avatarUrl ?: ($account["avatar_url"] ?? null),
+        ],
+        "tokens" => issue_tokens($db, $config, $id, "user"),
+    ]);
+}
 
 if (
     $method === "POST" &&
